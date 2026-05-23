@@ -1,3 +1,5 @@
+import type { CliPreferences } from "../cli/runner";
+
 export type Priority = "low" | "medium" | "high";
 
 export interface ParsedReminder {
@@ -9,10 +11,7 @@ export interface ParsedReminder {
   recurrence: string | null;
 }
 
-export interface Preferences {
-  cliMode: "claude" | "codex";
-  cliPath: string;
-  model: string;
+export interface Preferences extends CliPreferences {
   defaultList: string;
-  timeoutSeconds: string;
+  slackToken: string;
 }

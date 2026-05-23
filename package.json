@@ -16,6 +16,20 @@
       "subtitle": "AI Reminder",
       "description": "Type a reminder in natural language; AI parses and creates it.",
       "mode": "view"
+    },
+    {
+      "name": "set-slack-status",
+      "title": "Set Slack Status",
+      "subtitle": "AI Status",
+      "description": "Set your Slack profile status with an expiration; AI parses natural language.",
+      "mode": "view"
+    },
+    {
+      "name": "clear-slack-status",
+      "title": "Clear Slack Status",
+      "subtitle": "AI Status",
+      "description": "Clear your Slack profile status immediately.",
+      "mode": "no-view"
     }
   ],
   "preferences": [
@@ -34,6 +48,10 @@
         {
           "title": "Claude Code (claude)",
           "value": "claude"
+        },
+        {
+          "title": "Google Gemini (gemini)",
+          "value": "gemini"
         }
       ]
     },
@@ -50,7 +68,7 @@
       "type": "textfield",
       "required": false,
       "title": "Model",
-      "description": "Model name passed to the CLI (codex --model, claude --model). Leave empty to use the CLI default.",
+      "description": "Model name passed to the CLI (codex --model, claude --model, gemini -m). Leave empty to use the CLI default.",
       "default": "gpt-5.4-mini"
     },
     {
@@ -68,6 +86,13 @@
       "title": "Parse Timeout (seconds)",
       "description": "Max wait for the CLI to return.",
       "default": "30"
+    },
+    {
+      "name": "slackToken",
+      "type": "password",
+      "required": false,
+      "title": "Slack User OAuth Token",
+      "description": "xoxp- token from a Slack app with users.profile:write scope. See docs/slack-setup.md for step-by-step setup."
     }
   ],
   "dependencies": {

@@ -6,16 +6,18 @@ Personal Raycast extension — a growing collection of commands I use day to day
 
 | Command | What it does |
 | --- | --- |
-| **Create ReMYnder** (`parse-reminder`) | Type a reminder in natural language. A headless AI CLI (Claude Code or OpenAI Codex) parses title / due date / list / priority / RRULE, you confirm in a preview form, and it lands in Apple Reminders via `osascript`. |
-
-More commands will be added over time (Slack status, …).
+| **Create ReMYnder** (`parse-reminder`) | Type a reminder in natural language. A headless AI CLI (Claude Code, OpenAI Codex, or Google Gemini) parses title / due date / list / priority / RRULE, you confirm in a preview form, and it lands in Apple Reminders via `osascript`. |
+| **Set Slack Status** (`set-slack-status`) | Type a status in natural language (`in a meeting until 3pm`). AI parses text + emoji + expiration; you confirm and it ships to Slack via `users.profile.set`. ⌘1–⌘5 re-applies a recent status without re-parsing. See [docs/slack-setup.md](docs/slack-setup.md) for token setup. |
+| **Clear Slack Status** (`clear-slack-status`) | No-view command — clears your Slack profile status immediately. Bind to a Raycast hotkey. |
 
 ## Requirements
 
 - macOS with Raycast.
 - For `parse-reminder`:
   - Reminders access granted to Raycast.
-  - One of [Claude Code CLI](https://docs.claude.com/claude-code) (`claude`) or [OpenAI Codex CLI](https://developers.openai.com/codex) (`codex`).
+  - One of [Claude Code CLI](https://docs.claude.com/claude-code) (`claude`), [OpenAI Codex CLI](https://developers.openai.com/codex) (`codex`), or [Google Gemini CLI](https://geminicli.com/) (`gemini`).
+- For `set-slack-status` / `clear-slack-status`:
+  - A Slack User OAuth Token with the `users.profile:write` scope. Follow [docs/slack-setup.md](docs/slack-setup.md).
 
 ## Install
 
@@ -38,10 +40,19 @@ pnpm build
 ```
 src/
   parse-reminder.tsx        # command entry (Raycast manifest)
+  set-slack-status.tsx
+  clear-slack-status.tsx
   lib/
+    cli/
+      runner.ts             # shared CLI spawn / arg builders / JSON extract
     reminders/              # everything reminder-specific
       parser.ts
       reminders.ts
+      types.ts
+    slack/
+      parser.ts             # AI prompt → ParsedStatus (text, emoji, expiration)
+      client.ts             # users.profile.set / clear
+      recent.ts             # LocalStorage recents for ⌘1–⌘5
       types.ts
 ```
 
@@ -51,11 +62,12 @@ Each new command gets its own `<command>.tsx` at the top of `src/` and (if non-t
 
 | Setting | Default | Notes |
 | --- | --- | --- |
-| AI CLI | `codex` | `claude` or `codex` — used by `parse-reminder`. |
+| AI CLI | `codex` | `claude`, `codex`, or `gemini` — used by every command that parses natural language. |
 | CLI Path | `/opt/homebrew/bin/codex` | Absolute path; Raycast doesn't inherit shell `PATH`. |
 | Model | `gpt-5.4-mini` | Passed to the CLI. Empty = CLI default. |
 | Default List | `Reminders` | Reminders list to use when the AI didn't name one. |
 | Parse Timeout (seconds) | `30` | Max wait for the CLI to return. |
+| Slack User OAuth Token | _(empty)_ | `xoxp-…` token with `users.profile:write`. See [docs/slack-setup.md](docs/slack-setup.md). |
 
 ## Notes on `parse-reminder`
 

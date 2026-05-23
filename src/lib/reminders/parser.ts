@@ -1,61 +1,5 @@
-import { execFile, spawn } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { promisify } from "node:util";
+import { extractJsonObject, runCli } from "../cli/runner";
 import type { ParsedReminder, Preferences } from "./types";
-
-const execFileP = promisify(execFile);
-
-// Run a CLI with stdin explicitly closed and collect stdout/stderr.
-// Needed for codex: it reads stdin if it isn't EOF, even when given a
-// positional prompt, and the async `execFile`'s `input` option is silently
-// ignored (it only works in the *Sync variants).
-function runWithClosedStdin(
-  cli: string,
-  args: string[],
-  timeoutMs: number,
-): Promise<{ stdout: string; stderr: string }> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(cli, args, { stdio: ["pipe", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    let killed = false;
-    const timer = setTimeout(() => {
-      killed = true;
-      child.kill("SIGKILL");
-    }, timeoutMs);
-    child.stdout.on("data", (d) => {
-      stdout += d.toString();
-    });
-    child.stderr.on("data", (d) => {
-      stderr += d.toString();
-    });
-    child.on("error", (err) => {
-      clearTimeout(timer);
-      reject(err);
-    });
-    child.on("close", (code, signal) => {
-      clearTimeout(timer);
-      if (killed) {
-        const e = new Error(`Timed out after ${timeoutMs}ms`) as NodeJS.ErrnoException & { stderr?: string };
-        e.code = "ETIMEDOUT";
-        e.stderr = stderr;
-        return reject(e);
-      }
-      if (code !== 0) {
-        const e = new Error(`Exit code ${code}${signal ? ` (signal ${signal})` : ""}`) as NodeJS.ErrnoException & {
-          stderr?: string;
-        };
-        e.code = String(code ?? signal ?? "unknown");
-        e.stderr = stderr;
-        return reject(e);
-      }
-      resolve({ stdout, stderr });
-    });
-    child.stdin.end();
-  });
-}
 
 const SCHEMA_DESCRIPTION = `{
   "title":       string,                         // imperative; the reminder body, no date words
@@ -86,57 +30,6 @@ function buildPrompt(userText: string): string {
     "",
     `User input: ${JSON.stringify(userText)}`,
   ].join("\n");
-}
-
-function resolveCliPath(prefs: Preferences): string {
-  if (prefs.cliPath && prefs.cliPath.trim()) return prefs.cliPath.trim();
-  return prefs.cliMode === "codex" ? "codex" : "claude";
-}
-
-function buildClaudeArgs(prefs: Preferences, prompt: string): string[] {
-  const args = ["-p", prompt, "--output-format", "json"];
-  const model = prefs.model?.trim();
-  if (model) args.push("--model", model);
-  return args;
-}
-
-function buildCodexArgs(
-  prefs: Preferences,
-  prompt: string,
-  outputFile: string,
-): string[] {
-  const args = [
-    "exec",
-    "--skip-git-repo-check",
-    "--output-last-message",
-    outputFile,
-  ];
-  const model = prefs.model?.trim();
-  if (model) args.push("--model", model);
-  args.push(prompt);
-  return args;
-}
-
-function extractJsonObject(raw: string): string {
-  const trimmed = raw.trim();
-  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-  const candidate = fenceMatch ? fenceMatch[1] : trimmed;
-  const start = candidate.indexOf("{");
-  const end = candidate.lastIndexOf("}");
-  if (start === -1 || end === -1 || end <= start) {
-    throw new Error("No JSON object found in CLI output");
-  }
-  return candidate.slice(start, end + 1);
-}
-
-function unwrapClaudeEnvelope(raw: string): string {
-  try {
-    const env = JSON.parse(raw);
-    if (env && typeof env.result === "string") return env.result;
-  } catch {
-    // fall through to raw
-  }
-  return raw;
 }
 
 function normalize(obj: unknown): ParsedReminder {
@@ -175,65 +68,22 @@ export async function parseReminder(
   if (trimmed.length > 4000)
     throw new Error("Reminder text is too long (max 4000 chars)");
 
-  const cli = resolveCliPath(prefs);
-  const prompt = buildPrompt(trimmed);
-  const timeoutMs = Math.max(5, Number(prefs.timeoutSeconds) || 30) * 1000;
-
-  console.log("[ai-reminder] parser start", {
-    mode: prefs.cliMode,
-    cli,
-    model: prefs.model || "(default)",
-    timeoutMs,
-    inputLen: trimmed.length,
+  const modelOutput = await runCli({
+    prefs,
+    prompt: buildPrompt(trimmed),
+    logTag: "[ai-reminder]",
   });
-
-  let modelOutput: string;
-  let tmpDir: string | null = null;
-
-  try {
-    if (prefs.cliMode === "codex") {
-      tmpDir = await mkdtemp(join(tmpdir(), "ai-reminder-"));
-      const outFile = join(tmpDir, "last.txt");
-      const args = buildCodexArgs(prefs, prompt, outFile);
-      console.log("[ai-reminder] spawn codex", { cli, argv: args.slice(0, -1) });
-      try {
-        const { stdout, stderr } = await runWithClosedStdin(cli, args, timeoutMs);
-        console.log("[ai-reminder] codex stdout tail:", stdout.slice(-200));
-        if (stderr) console.log("[ai-reminder] codex stderr tail:", stderr.slice(-400));
-      } catch (err) {
-        console.error("[ai-reminder] codex exec failed", err);
-        throw wrapCliError(err, cli);
-      }
-      modelOutput = await readFile(outFile, "utf8");
-      console.log("[ai-reminder] codex --output-last-message:", modelOutput);
-    } else {
-      const args = buildClaudeArgs(prefs, prompt);
-      console.log("[ai-reminder] spawn claude", { cli, argv: ["-p", "<prompt>", "--output-format", "json"] });
-      let stdout: string;
-      try {
-        const result = await execFileP(cli, args, {
-          timeout: timeoutMs,
-          maxBuffer: 4 * 1024 * 1024,
-        });
-        stdout = result.stdout;
-        if (result.stderr) console.log("[ai-reminder] claude stderr tail:", result.stderr.slice(-400));
-      } catch (err) {
-        console.error("[ai-reminder] claude exec failed", err);
-        throw wrapCliError(err, cli);
-      }
-      modelOutput = unwrapClaudeEnvelope(stdout);
-      console.log("[ai-reminder] claude model output:", modelOutput);
-    }
-  } finally {
-    if (tmpDir)
-      await rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
-  }
 
   let jsonText: string;
   try {
     jsonText = extractJsonObject(modelOutput);
   } catch (err) {
-    console.error("[ai-reminder] extractJsonObject failed", err, "raw:", modelOutput);
+    console.error(
+      "[ai-reminder] extractJsonObject failed",
+      err,
+      "raw:",
+      modelOutput,
+    );
     throw new Error(
       `Model did not return JSON.\nRaw output (first 400 chars):\n${modelOutput.slice(0, 400)}`,
     );
@@ -245,15 +95,4 @@ export async function parseReminder(
     throw new Error(`CLI returned invalid JSON:\n${jsonText.slice(0, 300)}`);
   }
   return normalize(parsed);
-}
-
-function wrapCliError(err: unknown, cli: string): Error {
-  const e = err as NodeJS.ErrnoException & { stderr?: string };
-  if (e.code === "ENOENT") {
-    return new Error(`CLI not found: ${cli}. Check the CLI Path preference.`);
-  }
-  const stderrTail = (e.stderr ?? "").split("\n").slice(-5).join("\n").trim();
-  return new Error(
-    `CLI failed (${e.code ?? "unknown"})${stderrTail ? `\n${stderrTail}` : ""}`,
-  );
 }
