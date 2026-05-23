@@ -5,3 +5,8 @@ dist/
 .raycast/
 package-lock.json
 yarn.lock
+
+# Claude Code / agent harness — local tooling, not project files
+.agents/
+skills-lock.json
+.claude/
