@@ -46,7 +46,7 @@ Before writing parser code, confirm what `raycast/apple-reminders` actually acce
 ## Phase 1 — Scaffold (~15 min)
 
 ```bash
-cd /Users/dmitriyportenko/work/home/raycast/reminder
+cd raycast-toolbox
 npx create-raycast-extension@latest .
 # Template: "Form" command, TypeScript, name: ai-reminder
 ```

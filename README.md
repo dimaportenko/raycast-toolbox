@@ -22,7 +22,7 @@ More commands will be added over time (Slack status, …).
 Requires [pnpm](https://pnpm.io/installation) (`packageManager` is pinned in `package.json`).
 
 ```bash
-cd /Users/dmitriyportenko/work/home/raycast/reminder
+cd raycast-toolbox
 pnpm install
 pnpm dev        # opens Raycast in dev mode with this extension loaded
 ```
