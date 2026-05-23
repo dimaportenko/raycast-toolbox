@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { ParsedReminder } from "../types";
+import type { ParsedReminder } from "./types";
 
 const execFileP = promisify(execFile);
 

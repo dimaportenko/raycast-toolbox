@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import type { ParsedReminder, Preferences } from "../types";
+import type { ParsedReminder, Preferences } from "./types";
 
 const execFileP = promisify(execFile);
 

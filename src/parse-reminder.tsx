@@ -13,9 +13,9 @@ import {
   showToast,
 } from "@raycast/api";
 import { useEffect, useState } from "react";
-import { parseReminder } from "./lib/parser";
-import { createReminder, listReminderLists } from "./lib/reminders";
-import type { ParsedReminder, Preferences } from "./types";
+import { parseReminder } from "./lib/reminders/parser";
+import { createReminder, listReminderLists } from "./lib/reminders/reminders";
+import type { ParsedReminder, Preferences } from "./lib/reminders/types";
 
 type Stage = "input" | "preview" | "error";
 

@@ -1,8 +1,8 @@
 {
   "$schema": "https://www.raycast.com/schemas/extension.json",
-  "name": "ai-reminder",
-  "title": "AI Reminder",
-  "description": "Create Apple Reminders from natural language using a headless AI CLI (Claude Code or Codex).",
+  "name": "raycast-toolbox",
+  "title": "Toolbox",
+  "description": "Personal toolbox of Raycast commands — Apple Reminders from natural language, Slack status, and more.",
   "icon": "extension-icon.png",
   "author": "dmitriyportenko",
   "categories": [
