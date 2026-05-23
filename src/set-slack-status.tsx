@@ -301,9 +301,19 @@ export default function Command() {
           value={text}
           onChange={setText}
         />
-        <Form.Description
-          text={`Parser: ${prefs.cliMode}. ${recents.length > 0 ? `Press ⌘1–⌘${Math.min(recents.length, 5)} to re-apply a recent status.` : ""}`}
-        />
+        {recents.length > 0 && (
+          <Form.Description
+            title="Recent"
+            text={recents
+              .slice(0, 5)
+              .map(
+                (e, i) =>
+                  `⌘${i + 1}  ${e.emoji} ${e.text || "(no text)"}  ·  ${describeDuration(e.durationMs)}`,
+              )
+              .join("\n")}
+          />
+        )}
+        <Form.Description text={`Parser: ${prefs.cliMode}`} />
       </Form>
     );
   }
