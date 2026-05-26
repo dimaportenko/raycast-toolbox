@@ -13,7 +13,7 @@ import {
   showToast,
 } from "@raycast/api";
 import { useEffect, useState } from "react";
-import { parseReminder } from "./lib/reminders/parser";
+import { inferRecurrence, parseReminder } from "./lib/reminders/parser";
 import { createReminder, listReminderLists } from "./lib/reminders/reminders";
 import type { ParsedReminder, Preferences } from "./lib/reminders/types";
 
@@ -28,11 +28,24 @@ function toDate(iso: string | null): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+const NO_RECURRENCE = "__never__";
+
+const RECURRENCE_OPTIONS = [
+  { value: NO_RECURRENCE, title: "No Repeat" },
+  { value: "FREQ=DAILY", title: "Daily" },
+  { value: "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR", title: "Every Weekday" },
+  { value: "FREQ=WEEKLY", title: "Weekly" },
+  { value: "FREQ=MONTHLY", title: "Monthly" },
+  { value: "FREQ=YEARLY", title: "Yearly" },
+];
+
 export default function Command() {
   const prefs = getPreferenceValues<Preferences>();
   const [stage, setStage] = useState<Stage>("input");
   const [text, setText] = useState<string>("");
   const [parsed, setParsed] = useState<ParsedReminder | null>(null);
+  const [recurrence, setRecurrence] = useState<string>(NO_RECURRENCE);
+  const [recurrenceTouched, setRecurrenceTouched] = useState(false);
   const [lists, setLists] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string>("");
@@ -41,7 +54,8 @@ export default function Command() {
     listReminderLists().then((found) => {
       const fallback = prefs.defaultList?.trim() || "Reminders";
       const all = found.length > 0 ? found : [fallback];
-      setLists(Array.from(new Set([fallback, ...all])));
+      const nextLists = Array.from(new Set([fallback, ...all]));
+      setLists(nextLists);
     });
     LocalStorage.getItem<string>(LAST_TEXT_KEY).then((v) => {
       if (v && typeof v === "string") setText(v);
@@ -65,7 +79,10 @@ export default function Command() {
     });
     try {
       const result = await parseReminder(input, prefs);
+      const nextRecurrence = result.recurrence ?? NO_RECURRENCE;
       setParsed(result);
+      setRecurrence(nextRecurrence);
+      setRecurrenceTouched(false);
       setStage("preview");
       toast.style = Toast.Style.Success;
       toast.title = "Parsed";
@@ -98,12 +115,20 @@ export default function Command() {
       values.list?.trim() || prefs.defaultList?.trim() || "Reminders";
     setBusy(true);
     try {
+      const inferredRecurrence = inferRecurrence(text);
+      const selectedRecurrence =
+        recurrence === NO_RECURRENCE
+          ? recurrenceTouched
+            ? null
+            : inferredRecurrence
+          : recurrence;
       await createReminder({
         title: values.title.trim(),
         dueDate: values.dueDate ? values.dueDate.toISOString() : null,
         list,
         notes: values.notes?.trim() ? values.notes.trim() : null,
         priority: (values.priority as ParsedReminder["priority"]) || null,
+        recurrence: selectedRecurrence,
       });
       await LocalStorage.setItem(LAST_LIST_KEY, list);
       await LocalStorage.removeItem(LAST_TEXT_KEY);
@@ -181,7 +206,7 @@ export default function Command() {
         <Form.TextArea
           id="text"
           title="Reminder"
-          placeholder="remind me today at 16:00 to have a call with Vitalii"
+          placeholder="exercises 17:00 every weekday"
           autoFocus
           value={text}
           onChange={setText}
@@ -194,6 +219,15 @@ export default function Command() {
   }
 
   const p = parsed!;
+  const recurrenceOptions =
+    recurrence !== NO_RECURRENCE &&
+    !RECURRENCE_OPTIONS.some((option) => option.value === recurrence)
+      ? [
+          ...RECURRENCE_OPTIONS,
+          { value: recurrence, title: `Custom: ${recurrence}` },
+        ]
+      : RECURRENCE_OPTIONS;
+
   return (
     <Form
       isLoading={busy}
@@ -248,10 +282,32 @@ export default function Command() {
         <Form.Dropdown.Item value="medium" title="Medium" />
         <Form.Dropdown.Item value="high" title="High" />
       </Form.Dropdown>
+      <Form.Dropdown
+        id="recurrence"
+        title="Repeat"
+        value={recurrence}
+        onChange={(value) => {
+          setRecurrence(value);
+          setRecurrenceTouched(true);
+        }}
+      >
+        {recurrenceOptions.map((option) => (
+          <Form.Dropdown.Item
+            key={option.value}
+            value={option.value}
+            title={option.title}
+          />
+        ))}
+      </Form.Dropdown>
       <Form.TextArea id="notes" title="Notes" defaultValue={p.notes ?? ""} />
-      {p.recurrence ? (
-        <Form.Description title="Recurrence (RRULE)" text={p.recurrence} />
-      ) : null}
+      <Form.Description
+        title="Repeat Rule"
+        text={
+          recurrence === NO_RECURRENCE
+            ? (recurrenceTouched ? null : inferRecurrence(text)) || "None"
+            : recurrence
+        }
+      />
       <Form.Description text={`Input: "${text}"`} />
     </Form>
   );

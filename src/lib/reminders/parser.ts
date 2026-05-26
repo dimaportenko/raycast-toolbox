@@ -25,20 +25,59 @@ function buildPrompt(userText: string): string {
     '- "today", "tonight", "tomorrow", "next Monday" etc. resolve relative to the current date/time above.',
     '- If the user gives a time without AM/PM, prefer the next future occurrence (e.g. "at 9" after 9am means 9pm).',
     "- Strip date/time words from `title`. Title is what to do, not when.",
-    "- If recurrence is mentioned, emit an RFC 5545 RRULE (e.g. FREQ=WEEKLY;BYDAY=MO).",
+    "- Recurrence defaults to null/no repeat. If recurrence is mentioned, emit an RFC 5545 RRULE (e.g. FREQ=WEEKLY;BYDAY=MO).",
+    '- For "every weekday", use recurrence "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR".',
+    "- If recurrence is mentioned with a due time/date, dueDate is the first upcoming occurrence that matches the recurrence.",
     "- If a field is not present in the input, return null (do not invent values).",
     "",
     `User input: ${JSON.stringify(userText)}`,
   ].join("\n");
 }
 
-function normalize(obj: unknown): ParsedReminder {
+export function inferRecurrence(text: string): string | null {
+  const lower = text.toLowerCase();
+  if (/\b(no repeat|non[-\s]?recurring|one[-\s]?time)\b/.test(lower)) {
+    return null;
+  }
+  if (/\b(?:every|each)\s+weekdays?\b|\bweekdays?\b/.test(lower)) {
+    return "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR";
+  }
+  if (/\b(?:every|each)\s+day\b|\bdaily\b/.test(lower)) {
+    return "FREQ=DAILY";
+  }
+  if (/\b(?:every|each)\s+week\b|\bweekly\b/.test(lower)) {
+    return "FREQ=WEEKLY";
+  }
+  if (/\b(?:every|each)\s+month\b|\bmonthly\b/.test(lower)) {
+    return "FREQ=MONTHLY";
+  }
+  if (/\b(?:every|each)\s+year\b|\byearly\b|\bannually\b/.test(lower)) {
+    return "FREQ=YEARLY";
+  }
+  return null;
+}
+
+function stripRecurrenceWords(title: string): string {
+  return title
+    .replace(/\b(?:every|each)\s+weekdays?\b/gi, "")
+    .replace(/\b(?:every|each)\s+day\b|\bdaily\b/gi, "")
+    .replace(/\b(?:every|each)\s+week\b|\bweekly\b/gi, "")
+    .replace(/\b(?:every|each)\s+month\b|\bmonthly\b/gi, "")
+    .replace(/\b(?:every|each)\s+year\b|\byearly\b|\bannually\b/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([,.;:!?])/g, "$1")
+    .replace(/[-–—,.;:\s]+$/g, "")
+    .trim();
+}
+
+function normalize(obj: unknown, userText: string): ParsedReminder {
   if (!obj || typeof obj !== "object") {
     throw new Error("Parsed result is not an object");
   }
   const o = obj as Record<string, unknown>;
-  const title = typeof o.title === "string" ? o.title.trim() : "";
+  let title = typeof o.title === "string" ? o.title.trim() : "";
   if (!title) throw new Error("Parsed result is missing a title");
+  title = stripRecurrenceWords(title) || title;
 
   const allowedPriority = new Set(["low", "medium", "high"]);
   const priorityRaw =
@@ -55,7 +94,9 @@ function normalize(obj: unknown): ParsedReminder {
     notes: typeof o.notes === "string" && o.notes ? o.notes : null,
     priority,
     recurrence:
-      typeof o.recurrence === "string" && o.recurrence ? o.recurrence : null,
+      typeof o.recurrence === "string" && o.recurrence
+        ? o.recurrence
+        : inferRecurrence(userText),
   };
 }
 
@@ -94,5 +135,5 @@ export async function parseReminder(
   } catch {
     throw new Error(`CLI returned invalid JSON:\n${jsonText.slice(0, 300)}`);
   }
-  return normalize(parsed);
+  return normalize(parsed, trimmed);
 }
