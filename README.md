@@ -6,7 +6,7 @@ Personal Raycast extension — a growing collection of commands I use day to day
 
 | Command                                       | What it does                                                                                                                                                                                                                                                                       |
 | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Create ReMYnder** (`parse-reminder`)        | Type a reminder in natural language. A headless AI CLI (Claude Code, OpenAI Codex, or Google Gemini) parses title / due date / list / priority / repeat RRULE, you confirm in a preview form, and it lands in Apple Reminders via `osascript`.                                     |
+| **Create ReMYnder** (`parse-reminder`)        | Type a reminder in natural language. A headless AI CLI (Claude Code, OpenAI Codex, Google Gemini, or local Ollama) parses title / due date / list / priority / repeat RRULE, you confirm in a preview form, and it lands in Apple Reminders via `osascript`.                       |
 | **Set Slack Status** (`set-slack-status`)     | Type a status in natural language (`in a meeting until 3pm`). AI parses text + emoji + expiration; you confirm and it ships to Slack via `users.profile.set`. ⌘1–⌘5 re-applies a recent status without re-parsing. See [docs/slack-setup.md](docs/slack-setup.md) for token setup. |
 | **Clear Slack Status** (`clear-slack-status`) | No-view command — clears your Slack profile status immediately. Bind to a Raycast hotkey.                                                                                                                                                                                          |
 
@@ -15,7 +15,7 @@ Personal Raycast extension — a growing collection of commands I use day to day
 - macOS with Raycast.
 - For `parse-reminder`:
   - Reminders access granted to Raycast.
-  - One of [Claude Code CLI](https://docs.claude.com/claude-code) (`claude`), [OpenAI Codex CLI](https://developers.openai.com/codex) (`codex`), or [Google Gemini CLI](https://geminicli.com/) (`gemini`).
+  - One of [Claude Code CLI](https://docs.claude.com/claude-code) (`claude`), [OpenAI Codex CLI](https://developers.openai.com/codex) (`codex`), [Google Gemini CLI](https://geminicli.com/) (`gemini`), or [Ollama](https://ollama.com/) (`ollama`) for local small models.
 - For `set-slack-status` / `clear-slack-status`:
   - A Slack User OAuth Token with the `users.profile:write` scope. Follow [docs/slack-setup.md](docs/slack-setup.md).
 
@@ -60,20 +60,28 @@ Each new command gets its own `<command>.tsx` at the top of `src/` and (if non-t
 
 ## Preferences (current)
 
-| Setting                 | Default                   | Notes                                                                                      |
-| ----------------------- | ------------------------- | ------------------------------------------------------------------------------------------ |
-| AI CLI                  | `codex`                   | `claude`, `codex`, or `gemini` — used by every command that parses natural language.       |
-| CLI Path                | `/opt/homebrew/bin/codex` | Absolute path; Raycast doesn't inherit shell `PATH`.                                       |
-| Model                   | `gpt-5.4-mini`            | Passed to the CLI. Empty = CLI default.                                                    |
-| Default List            | `Reminders`               | Reminders list to use when the AI didn't name one.                                         |
-| Parse Timeout (seconds) | `30`                      | Max wait for the CLI to return.                                                            |
-| Slack User OAuth Token  | _(empty)_                 | `xoxp-…` token with `users.profile:write`. See [docs/slack-setup.md](docs/slack-setup.md). |
+| Setting                 | Default                   | Notes                                                                                                        |
+| ----------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| AI CLI                  | `codex`                   | `claude`, `codex`, `gemini`, or `ollama` — used by every command that parses natural language.               |
+| CLI Path                | `/opt/homebrew/bin/codex` | Absolute path; Raycast doesn't inherit shell `PATH`. For Ollama, use `ollama` or `/opt/homebrew/bin/ollama`. |
+| Model                   | `gpt-5.4-mini`            | Passed to the CLI. For Ollama, use `qwen2.5:3b-instruct` for speed or `qwen2.5:7b-instruct` for reliability. |
+| Default List            | `Reminders`               | Reminders list to use when the AI didn't name one.                                                           |
+| Parse Timeout (seconds) | `30`                      | Max wait for the CLI to return.                                                                              |
+| Slack User OAuth Token  | _(empty)_                 | `xoxp-…` token with `users.profile:write`. See [docs/slack-setup.md](docs/slack-setup.md).                   |
 
 ## Notes on `parse-reminder`
 
 - **Why `osascript`, not `launchCommand` to `raycast/apple-reminders`?** That extension's `create-reminder` command reads `draftValues` from `LaunchProps`, not `launchContext`, and the public `launchCommand` API only sets `context`. `osascript` + EventKit gives deterministic field control, including repeat rules, with no extra packaging.
 - **Locale-safe dates.** Reminder dates are passed to EventKit as date components, avoiding locale-dependent date string parsing.
 - **Envelope handling.** `claude --output-format json` wraps the model reply in `{ "result": "..." }`; `codex exec --json` emits NDJSON events. The parser unwraps both and tolerates code fences.
+- **Local small models.** Select `ollama`, pull a model such as `qwen2.5:3b-instruct`, and set Model to that tag. If Model is still the Codex default, the runner falls back to `qwen2.5:3b-instruct` for Ollama. The previous Codex/Claude/Gemini paths remain available.
+
+  ```bash
+  brew install ollama
+  ollama pull qwen2.5:3b-instruct
+  # optional, slower but more reliable:
+  ollama pull qwen2.5:7b-instruct
+  ```
 
 ## Troubleshooting
 

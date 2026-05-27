@@ -9,10 +9,10 @@
 
 type ExtensionPreferences = {
   /** AI CLI - Which headless CLI to use for parsing. */
-  "cliMode": "codex" | "claude" | "gemini",
+  "cliMode": "codex" | "claude" | "gemini" | "ollama",
   /** CLI Path - Absolute path to the CLI binary. Raycast does not inherit your shell PATH, so use the full path. */
   "cliPath": string,
-  /** Model - Model name passed to the CLI (codex --model, claude --model, gemini -m). Leave empty to use the CLI default. */
+  /** Model - Model name passed to the CLI. For Ollama, use qwen2.5:3b-instruct for speed or qwen2.5:7b-instruct for reliability. Leave empty to use the CLI default. */
   "model": string,
   /** Default List - Name of the Reminders list to use when none is parsed. */
   "defaultList": string,

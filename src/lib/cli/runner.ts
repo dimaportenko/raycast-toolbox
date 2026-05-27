@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 
 const execFileP = promisify(execFile);
 
-export type CliMode = "codex" | "claude" | "gemini";
+export type CliMode = "codex" | "claude" | "gemini" | "ollama";
 
 export interface CliPreferences {
   cliMode: CliMode;
@@ -77,12 +77,22 @@ function runWithClosedStdin(
 function defaultCliBinary(mode: CliMode): string {
   if (mode === "codex") return "codex";
   if (mode === "gemini") return "gemini";
+  if (mode === "ollama") return "/opt/homebrew/bin/ollama";
   return "claude";
 }
 
 function resolveCliPath(prefs: CliPreferences): string {
-  if (prefs.cliPath && prefs.cliPath.trim()) return prefs.cliPath.trim();
-  return defaultCliBinary(prefs.cliMode);
+  const path = prefs.cliPath?.trim();
+  if (!path) return defaultCliBinary(prefs.cliMode);
+
+  // Older installs have /opt/homebrew/bin/codex stored as the global default.
+  // If the user changes only AI CLI, prefer that mode's binary instead of
+  // accidentally invoking Codex with Ollama/Claude/Gemini arguments.
+  if (prefs.cliMode !== "codex" && path === "/opt/homebrew/bin/codex") {
+    return defaultCliBinary(prefs.cliMode);
+  }
+
+  return path;
 }
 
 function buildClaudeArgs(prefs: CliPreferences, prompt: string): string[] {
@@ -114,6 +124,53 @@ function buildGeminiArgs(prefs: CliPreferences, prompt: string): string[] {
   const model = prefs.model?.trim();
   if (model) args.push("-m", model);
   return args;
+}
+
+function resolveModel(prefs: CliPreferences): string {
+  const model = prefs.model?.trim();
+  if (prefs.cliMode === "ollama" && (!model || model === "gpt-5.4-mini")) {
+    return "qwen2.5:3b-instruct";
+  }
+  return model ?? "";
+}
+
+function ollamaBaseUrl(): string {
+  const host = process.env.OLLAMA_HOST?.trim() || "http://127.0.0.1:11434";
+  const withProtocol = /^https?:\/\//i.test(host) ? host : `http://${host}`;
+  return withProtocol.replace(/\/$/, "");
+}
+
+async function runOllamaApi(
+  model: string,
+  prompt: string,
+  timeoutMs: number,
+): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`${ollamaBaseUrl()}/api/generate`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model, prompt, format: "json", stream: false }),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+    }
+    const data = (await response.json()) as {
+      response?: unknown;
+      error?: unknown;
+    };
+    if (typeof data.error === "string" && data.error) {
+      throw new Error(data.error);
+    }
+    if (typeof data.response !== "string") {
+      throw new Error("Ollama response did not include a string response");
+    }
+    return data.response;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function unwrapClaudeEnvelope(raw: string): string {
@@ -157,7 +214,7 @@ export async function runCli(opts: RunCliOptions): Promise<string> {
   console.log(`${logTag} cli start`, {
     mode: prefs.cliMode,
     cli,
-    model: prefs.model || "(default)",
+    model: resolveModel(prefs) || "(default)",
     timeoutMs,
     promptLen: prompt.length,
   });
@@ -205,6 +262,25 @@ export async function runCli(opts: RunCliOptions): Promise<string> {
     } catch (err) {
       console.error(`${logTag} gemini exec failed`, err);
       throw wrapCliError(err, cli);
+    }
+  }
+
+  if (prefs.cliMode === "ollama") {
+    const model = resolveModel(prefs);
+    console.log(`${logTag} call ollama api`, {
+      baseUrl: ollamaBaseUrl(),
+      model,
+    });
+    try {
+      const output = await runOllamaApi(model, prompt, timeoutMs);
+      console.log(`${logTag} ollama output:`, output);
+      return output;
+    } catch (err) {
+      console.error(`${logTag} ollama api failed`, err);
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `Ollama failed: ${message}. Make sure Ollama is running and the model is pulled.`,
+      );
     }
   }
 

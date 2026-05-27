@@ -52,6 +52,10 @@
         {
           "title": "Google Gemini (gemini)",
           "value": "gemini"
+        },
+        {
+          "title": "Ollama Local (ollama)",
+          "value": "ollama"
         }
       ]
     },
@@ -68,7 +72,7 @@
       "type": "textfield",
       "required": false,
       "title": "Model",
-      "description": "Model name passed to the CLI (codex --model, claude --model, gemini -m). Leave empty to use the CLI default.",
+      "description": "Model name passed to the CLI. For Ollama, use qwen2.5:3b-instruct for speed or qwen2.5:7b-instruct for reliability. Leave empty to use the CLI default.",
       "default": "gpt-5.4-mini"
     },
     {

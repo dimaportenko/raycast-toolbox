@@ -35,6 +35,59 @@ function buildStatusPrompt(userText: string): string {
   ].join("\n");
 }
 
+function cleanupStatusText(text: string): string {
+  return text
+    .replace(
+      /\bfor\s+\d+(?:\.\d+)?\s*(?:h|hr|hrs|hour|hours|m|min|mins|minute|minutes)\b/gi,
+      "",
+    )
+    .replace(/\buntil\s+\d{1,2}(?::[0-5]\d)?\s*(?:am|pm)?\b/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function inferExpiration(userText: string, now: Date): number | null {
+  const durationMatch = /\bfor\s+([^,.;]+)/i.exec(userText);
+  if (durationMatch) {
+    let durationMs = 0;
+    const durationText = durationMatch[1];
+    const unitMatches = durationText.matchAll(
+      /(\d+(?:\.\d+)?)\s*(h|hr|hrs|hour|hours|m|min|mins|minute|minutes)\b/gi,
+    );
+    for (const match of unitMatches) {
+      const amount = Number(match[1]);
+      const unit = match[2].toLowerCase();
+      durationMs += unit.startsWith("h")
+        ? amount * 60 * 60 * 1000
+        : amount * 60 * 1000;
+    }
+    if (durationMs >= MIN_DURATION_MS) return now.getTime() + durationMs;
+  }
+
+  const untilMatch = /\buntil\s+(\d{1,2})(?::([0-5]\d))?\s*(am|pm)?\b/i.exec(
+    userText,
+  );
+  if (untilMatch) {
+    let hours = Number(untilMatch[1]);
+    const minutes = untilMatch[2] ? Number(untilMatch[2]) : 0;
+    const meridiem = untilMatch[3]?.toLowerCase();
+    if (meridiem) {
+      if (hours < 1 || hours > 12) return null;
+      if (meridiem === "pm" && hours !== 12) hours += 12;
+      if (meridiem === "am" && hours === 12) hours = 0;
+    }
+    if (hours > 23) return null;
+    const expiration = new Date(now);
+    expiration.setHours(hours, minutes, 0, 0);
+    if (expiration.getTime() - now.getTime() < MIN_DURATION_MS) {
+      expiration.setDate(expiration.getDate() + 1);
+    }
+    return expiration.getTime();
+  }
+
+  return null;
+}
+
 function normalizeEmoji(raw: unknown): { emoji: string; adjusted: boolean } {
   if (typeof raw !== "string") return { emoji: "", adjusted: false };
   const trimmed = raw.trim();
@@ -50,7 +103,7 @@ function normalizeEmoji(raw: unknown): { emoji: string; adjusted: boolean } {
   return { emoji: "", adjusted: true };
 }
 
-function normalize(obj: unknown, now: Date): ParsedStatus {
+function normalize(obj: unknown, now: Date, userText: string): ParsedStatus {
   if (!obj || typeof obj !== "object") {
     throw new Error("Parsed result is not an object");
   }
@@ -58,6 +111,7 @@ function normalize(obj: unknown, now: Date): ParsedStatus {
   const adjustments: string[] = [];
 
   let text = typeof o.status_text === "string" ? o.status_text.trim() : "";
+  text = cleanupStatusText(text);
   if (text.length > STATUS_TEXT_MAX) {
     text = text.slice(0, STATUS_TEXT_MAX);
     adjustments.push(`truncated text to ${STATUS_TEXT_MAX} chars`);
@@ -71,8 +125,11 @@ function normalize(obj: unknown, now: Date): ParsedStatus {
   }
 
   let expirationMs: number;
+  const inferredExpiration = inferExpiration(userText, now);
   const rawExp = o.expiration;
-  if (typeof rawExp === "string" && rawExp.trim()) {
+  if (inferredExpiration) {
+    expirationMs = inferredExpiration;
+  } else if (typeof rawExp === "string" && rawExp.trim()) {
     const parsed = new Date(rawExp).getTime();
     if (Number.isNaN(parsed)) {
       expirationMs = now.getTime() + DEFAULT_DURATION_MS;
@@ -136,5 +193,5 @@ export async function parseStatus(
   } catch {
     throw new Error(`CLI returned invalid JSON:\n${jsonText.slice(0, 300)}`);
   }
-  return normalize(parsed, new Date());
+  return normalize(parsed, new Date(), trimmed);
 }

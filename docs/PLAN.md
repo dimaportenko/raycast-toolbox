@@ -4,11 +4,11 @@ A Raycast extension that takes natural-language input ("remind me today at 16:00
 
 ## Decisions (locked in)
 
-| Choice | Selected |
-| --- | --- |
-| AI backend | Codex / Claude Code headless CLI (`claude -p` or `codex exec`) |
+| Choice        | Selected                                                                               |
+| ------------- | -------------------------------------------------------------------------------------- |
+| AI backend    | Codex / Claude Code headless CLI (`claude -p` or `codex exec`)                         |
 | Reminders API | Hand off to Raycast's official `raycast/apple-reminders` extension via `launchCommand` |
-| UX flow | Parse → preview form → confirm |
+| UX flow       | Parse → preview form → confirm                                                         |
 
 ## Phase 0 verdict — Path B (AppleScript) selected
 
@@ -100,23 +100,29 @@ Show a `<Toast style={Animated}>Parsing…</Toast>` during the CLI call.
 ```ts
 type ParsedReminder = {
   title: string;
-  dueDate: string | null;     // ISO 8601
+  dueDate: string | null; // ISO 8601
   list: string | null;
   notes: string | null;
   priority: "low" | "medium" | "high" | null;
-  recurrence: string | null;  // RFC 5545 RRULE or null
+  recurrence: string | null; // RFC 5545 RRULE or null
 };
 ```
 
 Spawn shape (verify each flag exists before relying on it):
 
 ```ts
-const { stdout } = await execFile(prefs.cliPath, [
-  "-p", buildPrompt(text),
-  "--output-format", "json",
-  // try --json-schema first; if claude rejects it, fall back to
-  // schema-in-system-prompt + JSON.parse(stdout.result)
-], { timeout: 30_000 });
+const { stdout } = await execFile(
+  prefs.cliPath,
+  [
+    "-p",
+    buildPrompt(text),
+    "--output-format",
+    "json",
+    // try --json-schema first; if claude rejects it, fall back to
+    // schema-in-system-prompt + JSON.parse(stdout.result)
+  ],
+  { timeout: 30_000 },
+);
 ```
 
 Prompt shape:
@@ -167,6 +173,14 @@ Always close with `showHUD("✓ Reminder created")` + `closeMainWindow()`.
 - Cache the last-used list in `LocalStorage` to populate the Dropdown default.
 - Add a "Try again" action when parse fails — re-runs the CLI with a stricter prompt.
 - README with screenshot.
+
+## Local model follow-up
+
+- Implemented an `ollama` CLI mode for local small models as an additional option; Codex/Claude/Gemini remain unchanged.
+  - Recommended fast model: `qwen2.5:3b-instruct`.
+  - Recommended reliability model: `qwen2.5:7b-instruct`.
+  - Reminder parsing and Slack status parsing share the same CLI runner, so both commands can use Ollama.
+  - Deterministic code fallbacks remain for recurrence/date edge cases where local models are weak.
 
 ## Verification before declaring done
 
